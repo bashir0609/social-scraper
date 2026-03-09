@@ -158,6 +158,27 @@
       font-weight: 700;
     }
 
+    .pager {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .pager .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-right: 6px;
+    }
+
+    .pager button {
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      box-shadow: none;
+    }
+
     #status { margin-top: 4px; }
     #results { overflow-x: auto; }
 
@@ -265,6 +286,8 @@
     let latestRows = [];
     let latestHeader = [];
     let parsedCsvCache = null;
+    let currentPage = 1;
+    let pageSize = 50;
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -458,14 +481,58 @@
         'app-ads.txt',
         'Status'
       ];
+      const totalRows = rows.length;
+      const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+      if (currentPage > totalPages) currentPage = totalPages;
+      const start = (currentPage - 1) * pageSize;
+      const end = Math.min(start + pageSize, totalRows);
+
       const table = ['<table><thead><tr>', ...headers.map(h => `<th>${escapeHtml(h)}</th>`), '</tr></thead><tbody>'];
-      for (const row of rows.slice(0, 100)) {
+      for (const row of rows.slice(start, end)) {
         table.push('<tr>');
         for (const col of cols) table.push(`<td>${escapeHtml(row[col] ?? '')}</td>`);
         table.push('</tr>');
       }
       table.push('</tbody></table>');
-      resultsEl.innerHTML = table.join('');
+
+      const pager = `
+        <div class="pager">
+          <span class="meta">Showing ${start + 1}-${end} of ${totalRows}</span>
+          <label class="small">Rows/page
+            <select id="pageSizeSelect">
+              ${[25,50,100,200].map(n => `<option value="${n}" ${n === pageSize ? 'selected' : ''}>${n}</option>`).join('')}
+            </select>
+          </label>
+          <button id="prevPageBtn" ${currentPage <= 1 ? 'disabled' : ''}>Prev</button>
+          <button id="nextPageBtn" ${currentPage >= totalPages ? 'disabled' : ''}>Next</button>
+          <span class="meta">Page ${currentPage} / ${totalPages}</span>
+        </div>
+      `;
+
+      resultsEl.innerHTML = table.join('') + pager;
+
+      const prevBtn = document.getElementById('prevPageBtn');
+      const nextBtn = document.getElementById('nextPageBtn');
+      const pageSizeSelect = document.getElementById('pageSizeSelect');
+      if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+          currentPage = Math.max(1, currentPage - 1);
+          render(rows);
+        });
+      }
+      if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+          currentPage = Math.min(totalPages, currentPage + 1);
+          render(rows);
+        });
+      }
+      if (pageSizeSelect) {
+        pageSizeSelect.addEventListener('change', () => {
+          pageSize = Number(pageSizeSelect.value || 50);
+          currentPage = 1;
+          render(rows);
+        });
+      }
     }
 
     function loadHistory() {
@@ -486,6 +553,7 @@
           const item = items[Number(btn.dataset.idx)];
           latestRows = item.rows || [];
           latestHeader = item.header || [];
+          currentPage = 1;
           render(latestRows);
           downloadBtn.disabled = latestRows.length === 0;
           statusEl.textContent = `Loaded saved run from ${item.createdAt}`;
@@ -568,6 +636,7 @@
           latestHeader = Object.keys(latestRows[0] || {});
         }
 
+        currentPage = 1;
         render(latestRows);
         saveHistory(latestRows, latestHeader);
         statusEl.innerHTML = `<span class="ok">Done.</span> Produced ${latestRows.length} row(s).`;
