@@ -15,6 +15,7 @@ if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
   // unless it detects a Lambda-like environment.
   process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE = process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || '1024';
 }
+process.env.CRAWLEE_LOG_LEVEL = process.env.CRAWLEE_LOG_LEVEL || 'WARNING';
 
 const SOCIAL_PATTERNS = {
   linkedin: /linkedin\.com\/(company|in|school)\//i,
@@ -441,6 +442,9 @@ async function crawlSingleSite(inputUrl, options) {
     proxyConfiguration,
     maxRequestsPerCrawl: maxPagesPerSite,
     maxRequestRetries: maxRetries,
+    // Prevent long retry/session-rotation loops on blocked/unreachable sites.
+    maxSessionRotations: Math.min(Math.max(maxRetries, 0), 2),
+    retryOnBlocked: false,
     requestHandlerTimeoutSecs: Math.ceil(timeoutMs / 1000),
     additionalMimeTypes: ['text/html'],
     respectRobotsTxtFile: Boolean(respectRobots),
@@ -508,6 +512,10 @@ async function crawlSingleSite(inputUrl, options) {
     await crawler.run();
   } catch (err) {
     found.scrape_status = `error: ${err.message}`;
+  }
+
+  if (found.pages_visited === 0 && found.scrape_status === 'ok') {
+    found.scrape_status = `homepage-unreachable: ${found.homepage_status_code}`;
   }
 
   found.linkedin_urls = uniq(socials.linkedin).join(' | ');
