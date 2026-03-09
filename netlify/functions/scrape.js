@@ -30,6 +30,20 @@ const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig;
 const PHONE_RE = /(?:\+?\d[\d()\s.-]{6,}\d)/g;
 const PHONE_CONTEXT_RE = /(phone|mobile|mob|call|whatsapp|wa\.me|tel|contact|hotline|support|help\s*line|customer\s*care|যোগাযোগ|মোবাইল|ফোন)/i;
 const CONTACT_HINTS = [/contact/i, /contact-us/i, /get-in-touch/i, /support/i, /nous-contacter/i, /contacto/i, /impressum/i];
+const BLOCKED_EMAIL_DOMAINS = [
+  'sentry.io',
+  'sentry.wixpress.com',
+  'sentry-next.wixpress.com',
+  'wixpress.com',
+];
+const BLOCKED_EMAIL_LOCAL_PARTS = [
+  'example',
+  'johndoe',
+  'janedoe',
+  'test',
+  'noreply',
+  'no-reply',
+];
 
 function normalizeUrl(url) {
   let value = String(url || '').trim();
@@ -49,6 +63,31 @@ function uniq(arr) {
   return [...new Set((arr || []).filter(Boolean))];
 }
 
+function normalizeEmail(rawEmail) {
+  return String(rawEmail || '').trim().toLowerCase();
+}
+
+function isLikelyBusinessEmail(email) {
+  const value = normalizeEmail(email);
+  if (!value || !value.includes('@')) return false;
+  const [local, domain] = value.split('@');
+  if (!local || !domain) return false;
+
+  if (BLOCKED_EMAIL_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
+    return false;
+  }
+
+  if (BLOCKED_EMAIL_LOCAL_PARTS.includes(local)) return false;
+  if (local.endsWith('.invalid')) return false;
+  // Common Sentry/project-key pattern.
+  if (/^[a-f0-9]{24,}$/i.test(local)) return false;
+  // Junk / impossible business emails.
+  if (local.length < 2 || local.length > 64) return false;
+  if (domain.length < 4 || domain.length > 190) return false;
+
+  return true;
+}
+
 function isSameOrSubdomain(baseDomain, candidateUrl) {
   try {
     const hostname = new URL(candidateUrl).hostname.replace(/^www\./i, '');
@@ -66,18 +105,69 @@ function absolutize(baseUrl, href) {
   }
 }
 
-function buildProxyUrls(proxyCountry, proxySession) {
+async function listWebshareProxies(apiKey, page = 1, pageSize = 25) {
+  const url = new URL('https://proxy.webshare.io/api/v2/proxy/list/');
+  url.searchParams.set('mode', 'direct');
+  url.searchParams.set('page', String(page));
+  url.searchParams.set('page_size', String(pageSize));
+
+  const req = await fetch(url.href, {
+    method: 'GET',
+    headers: {
+      Authorization: `Token ${apiKey}`,
+      Accept: 'application/json',
+    },
+  });
+
+  if (!req.ok) {
+    const text = await req.text();
+    throw new Error(`Webshare API ${req.status}: ${text}`);
+  }
+
+  return req.json();
+}
+
+function proxyRecordToUrl(record) {
+  if (!record || typeof record !== 'object') return '';
+
+  const host = String(record.proxy_address || record.address || record.host || record.ip_address || '').trim();
+  const port = String(
+    record.port
+    || record.http_port
+    || record.ports?.http
+    || record.ports?.http_port
+    || ''
+  ).trim();
+  const username = String(record.username || record.user || '').trim();
+  const password = String(record.password || record.pass || '').trim();
+
+  if (!host || !port || !username || !password) return '';
+  return `http://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`;
+}
+
+async function buildProxyUrls(proxyCountry, proxySession) {
   const direct = process.env.WEBSHARE_PROXY_URL?.trim();
   const list = process.env.WEBSHARE_PROXY_URLS?.trim();
   const host = process.env.WEBSHARE_PROXY_HOST?.trim();
   const port = process.env.WEBSHARE_PROXY_PORT?.trim();
   const username = process.env.WEBSHARE_PROXY_USERNAME?.trim();
   const password = process.env.WEBSHARE_PROXY_PASSWORD?.trim();
+  const apiKey = process.env.WEBSHARE_API_KEY?.trim();
+  const apiPageSize = Math.max(1, Math.min(Number(process.env.WEBSHARE_PROXY_PAGE_SIZE || 25), 100));
 
   let urls = [];
   if (list) urls = list.split(',').map(v => v.trim()).filter(Boolean);
   else if (direct) urls = [direct];
   else if (host && port && username && password) urls = [`http://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`];
+  else if (apiKey) {
+    try {
+      const data = await listWebshareProxies(apiKey, 1, apiPageSize);
+      const records = Array.isArray(data?.results) ? data.results : [];
+      urls = records.map(proxyRecordToUrl).filter(Boolean);
+    } catch (err) {
+      console.warn(`Failed to load proxies from Webshare API: ${err.message}`);
+    }
+  }
 
   // Labels only. Exact country/session pinning depends on provider endpoint style.
   return urls.map(url => {
@@ -364,7 +454,7 @@ async function crawlSingleSite(inputUrl, options) {
       const html = typeof body === 'string' ? body : $.html();
       const emails = html.match(EMAIL_RE) || [];
       const phones = extractPhones(html, $);
-      socials.emails.push(...emails.map(v => v.toLowerCase()));
+      socials.emails.push(...emails.map(normalizeEmail).filter(isLikelyBusinessEmail));
       socials.phones.push(...phones);
 
       const nextLinks = [];
@@ -511,7 +601,7 @@ export async function handler(event) {
       };
     }
 
-    const proxyUrls = buildProxyUrls(proxyCountry, proxySession);
+    const proxyUrls = await buildProxyUrls(proxyCountry, proxySession);
     const proxyConfiguration = proxyUrls.length ? new ProxyConfiguration({ proxyUrls }) : undefined;
 
     const flatResults = await mapWithConcurrency(
