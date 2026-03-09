@@ -384,6 +384,28 @@ async function resolveTextFileStatus({ path, baseDomain, finalUrl, timeoutMs, pr
   return fallback;
 }
 
+async function hydrateAdsStatuses(found, timeoutMs, proxyUrlForFetch, baseDomain) {
+  const ads = await resolveTextFileStatus({
+    path: '/ads.txt',
+    baseDomain: found.scrape_domain || baseDomain,
+    finalUrl: found.redirected_homepage_url || found.scrape_final_url,
+    timeoutMs,
+    proxyUrl: proxyUrlForFetch,
+  });
+  const appAds = await resolveTextFileStatus({
+    path: '/app-ads.txt',
+    baseDomain: found.scrape_domain || baseDomain,
+    finalUrl: found.redirected_homepage_url || found.scrape_final_url,
+    timeoutMs,
+    proxyUrl: proxyUrlForFetch,
+  });
+
+  found.ads_txt_url = ads.url || found.ads_txt_url;
+  found.ads_txt_status = ads.statusCode;
+  found.app_ads_txt_url = appAds.url || found.app_ads_txt_url;
+  found.app_ads_txt_status = appAds.statusCode;
+}
+
 async function crawlSingleSite(inputUrl, options) {
   const {
     maxPagesPerSite, maxDepth, timeoutMs, maxRetries, respectRobots,
@@ -423,7 +445,6 @@ async function crawlSingleSite(inputUrl, options) {
     tiktok: [], youtube: [], pinterest: [], emails: [], phones: []
   };
 
-  const queue = await RequestQueue.open(`queue-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const homepageMeta = await fetchHomepageMeta(inputUrl, timeoutMs, proxyUrlForFetch);
   const homepageUrl = homepageMeta.redirectedUrl || inputUrl;
   const homepageDomain = getDomain(homepageUrl) || baseDomain;
@@ -434,6 +455,20 @@ async function crawlSingleSite(inputUrl, options) {
   found.scrape_domain = homepageDomain;
   found.ads_txt_url = `https://${homepageDomain}/ads.txt`;
   found.app_ads_txt_url = `https://${homepageDomain}/app-ads.txt`;
+
+  const homepageCode = homepageMeta.statusCode;
+  const homepageCodeNum = Number(homepageCode);
+  const homepageUnavailable = homepageCode === 'error';
+  const homepageBlocked = Number.isFinite(homepageCodeNum) && homepageCodeNum >= 400;
+  if (homepageUnavailable || homepageBlocked) {
+    found.scrape_status = homepageUnavailable
+      ? 'homepage-unreachable: error'
+      : `homepage-blocked: ${homepageCodeNum}`;
+    await hydrateAdsStatuses(found, timeoutMs, proxyUrlForFetch, baseDomain);
+    return found;
+  }
+
+  const queue = await RequestQueue.open(`queue-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   await queue.addRequest({ url: homepageUrl, userData: { depth: 0, priority: 1 } });
 
@@ -528,25 +563,7 @@ async function crawlSingleSite(inputUrl, options) {
   found.emails_found = uniq(socials.emails).join(' | ');
   found.phones_found = uniq(socials.phones).join(' | ');
 
-  const ads = await resolveTextFileStatus({
-    path: '/ads.txt',
-    baseDomain: found.scrape_domain || baseDomain,
-    finalUrl: found.redirected_homepage_url || found.scrape_final_url,
-    timeoutMs,
-    proxyUrl: proxyUrlForFetch,
-  });
-  const appAds = await resolveTextFileStatus({
-    path: '/app-ads.txt',
-    baseDomain: found.scrape_domain || baseDomain,
-    finalUrl: found.redirected_homepage_url || found.scrape_final_url,
-    timeoutMs,
-    proxyUrl: proxyUrlForFetch,
-  });
-
-  found.ads_txt_url = ads.url || found.ads_txt_url;
-  found.ads_txt_status = ads.statusCode;
-  found.app_ads_txt_url = appAds.url || found.app_ads_txt_url;
-  found.app_ads_txt_status = appAds.statusCode;
+  await hydrateAdsStatuses(found, timeoutMs, proxyUrlForFetch, baseDomain);
 
   return found;
 }
