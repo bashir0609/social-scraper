@@ -255,6 +255,13 @@
     const urlColumnWrapEl = document.getElementById('urlColumnWrap');
     const urlColumnMapEl = document.getElementById('urlColumnMap');
     const mergeOutputEl = document.getElementById('mergeOutput');
+    const SCRAPE_APPEND_COLUMNS = [
+      'scrape_input_url','scrape_final_url','redirected_homepage_url','homepage_status_code','scrape_domain','contact_page',
+      'ads_txt_url','ads_txt_status','app_ads_txt_url','app_ads_txt_status',
+      'linkedin_urls','facebook_urls','instagram_urls','twitter_urls',
+      'tiktok_urls','youtube_urls','pinterest_urls','emails_found',
+      'phones_found','pages_visited','proxy_used','scrape_status'
+    ];
     let latestRows = [];
     let latestHeader = [];
     let parsedCsvCache = null;
@@ -346,6 +353,66 @@
       const urlCol = urlColumnMapEl.value || detectUrlColumn(parsed.header);
       const urls = parsed.rows.map(r => r[urlCol]).filter(Boolean);
       return { urls: [...new Set([...pasted, ...urls])], originalHeader: parsed.header, originalRows: parsed.rows, detectedUrlColumn: urlCol };
+    }
+
+    function normalizeUrlClient(url) {
+      let value = String(url || '').trim();
+      if (!value) return '';
+      if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+      return value;
+    }
+
+    function getDomainClient(url) {
+      try {
+        return new URL(normalizeUrlClient(url)).hostname.replace(/^www\./i, '');
+      } catch {
+        return '';
+      }
+    }
+
+    async function runScrapeInBatches(allUrls, commonPayload, batchSize = 5) {
+      const flatRows = [];
+      const total = allUrls.length;
+
+      for (let start = 0; start < total; start += batchSize) {
+        const end = Math.min(start + batchSize, total);
+        const batch = allUrls.slice(start, end);
+        const percent = Math.round((start / total) * 100);
+        statusEl.innerHTML = `<span class="muted">Running...</span> ${start}/${total} (${percent}%)`;
+
+        const res = await fetch('/api/scrape', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            ...commonPayload,
+            urls: batch,
+            outputMode: 'flat',
+            originalHeader: [],
+            originalRows: [],
+            detectedUrlColumn: '',
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Request failed at batch ${start + 1}`);
+
+        flatRows.push(...(data.rows || []));
+        render(flatRows);
+      }
+
+      return flatRows;
+    }
+
+    function mergeRowsWithScrapeResults(originalRows, originalHeader, detectedUrlColumn, flatRows) {
+      const resultMap = new Map(flatRows.map((r) => [normalizeUrlClient(r.scrape_input_url), r]));
+      const rows = originalRows.map((row) => {
+        const raw = row[detectedUrlColumn] || '';
+        const normalized = normalizeUrlClient(raw);
+        const fallback = `https://${getDomainClient(raw)}`;
+        const result = resultMap.get(normalized) || resultMap.get(fallback) || {};
+        return { ...row, ...result };
+      });
+      const header = [...originalHeader, ...SCRAPE_APPEND_COLUMNS.filter((v) => !originalHeader.includes(v))];
+      return { rows, header };
     }
 
     function buildCsv(rows, header) {
@@ -472,11 +539,6 @@
 
       try {
         const payload = {
-          urls: bundle.urls,
-          originalHeader: bundle.originalHeader,
-          originalRows: bundle.originalRows,
-          detectedUrlColumn: bundle.detectedUrlColumn,
-          outputMode: bundle.originalRows.length ? 'merge' : mergeOutputEl.value,
           contactFirst: document.getElementById('contactFirst').value === 'true',
           skipSocial: document.getElementById('skipSocial').value === 'true',
           maxPagesPerSite: Number(document.getElementById('maxPages').value || 5),
@@ -489,16 +551,23 @@
           proxySession: document.getElementById('proxySession').value.trim()
         };
 
-        const res = await fetch('/api/scrape', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Request failed');
+        const batchSize = Math.max(1, Math.min(payload.concurrency || 3, 10));
+        const flatRows = await runScrapeInBatches(bundle.urls, payload, batchSize);
 
-        latestRows = data.rows || [];
-        latestHeader = data.header || Object.keys(latestRows[0] || {});
+        if (bundle.originalRows.length) {
+          const merged = mergeRowsWithScrapeResults(
+            bundle.originalRows,
+            bundle.originalHeader,
+            bundle.detectedUrlColumn,
+            flatRows
+          );
+          latestRows = merged.rows;
+          latestHeader = merged.header;
+        } else {
+          latestRows = flatRows;
+          latestHeader = Object.keys(latestRows[0] || {});
+        }
+
         render(latestRows);
         saveHistory(latestRows, latestHeader);
         statusEl.innerHTML = `<span class="ok">Done.</span> Produced ${latestRows.length} row(s).`;
