@@ -186,6 +186,10 @@
         <label for="csvFile"><strong>Or upload lead CSV</strong></label><br>
         <input id="csvFile" type="file" accept=".csv,text/csv" />
         <div class="small muted">Auto-detects domain/website/url/site/homepage columns.</div>
+        <div id="urlColumnWrap" class="small muted" style="margin-top:8px; display:none;">
+          <label for="urlColumnMap"><strong>CSV domain/url column</strong></label><br>
+          <select id="urlColumnMap"></select>
+        </div>
       </div>
       <div>
         <label for="mergeOutput"><strong>Output mode</strong></label><br>
@@ -248,8 +252,12 @@
     const resultsEl = document.getElementById('results');
     const historyEl = document.getElementById('history');
     const csvFileEl = document.getElementById('csvFile');
+    const urlColumnWrapEl = document.getElementById('urlColumnWrap');
+    const urlColumnMapEl = document.getElementById('urlColumnMap');
+    const mergeOutputEl = document.getElementById('mergeOutput');
     let latestRows = [];
     let latestHeader = [];
+    let parsedCsvCache = null;
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -306,6 +314,19 @@
       return header[0] || '';
     }
 
+    function refreshUrlColumnMapping(header) {
+      if (!header.length) {
+        urlColumnWrapEl.style.display = 'none';
+        urlColumnMapEl.innerHTML = '';
+        return;
+      }
+
+      const detected = detectUrlColumn(header);
+      urlColumnMapEl.innerHTML = header.map(col => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`).join('');
+      urlColumnMapEl.value = detected;
+      urlColumnWrapEl.style.display = 'block';
+    }
+
     async function getInputBundle() {
       const pasted = document.getElementById('urls').value
         .split('\n')
@@ -315,9 +336,14 @@
       const file = csvFileEl.files && csvFileEl.files[0];
       if (!file) return { urls: pasted, originalHeader: [], originalRows: [] };
 
-      const text = await file.text();
-      const parsed = parseCsvText(text);
-      const urlCol = detectUrlColumn(parsed.header);
+      if (!parsedCsvCache) {
+        const text = await file.text();
+        parsedCsvCache = parseCsvText(text);
+        refreshUrlColumnMapping(parsedCsvCache.header);
+      }
+
+      const parsed = parsedCsvCache;
+      const urlCol = urlColumnMapEl.value || detectUrlColumn(parsed.header);
       const urls = parsed.rows.map(r => r[urlCol]).filter(Boolean);
       return { urls: [...new Set([...pasted, ...urls])], originalHeader: parsed.header, originalRows: parsed.rows, detectedUrlColumn: urlCol };
     }
@@ -412,6 +438,26 @@
       loadHistory();
     });
 
+    csvFileEl.addEventListener('change', async () => {
+      parsedCsvCache = null;
+      const file = csvFileEl.files && csvFileEl.files[0];
+      if (!file) {
+        refreshUrlColumnMapping([]);
+        return;
+      }
+
+      try {
+        const text = await file.text();
+        parsedCsvCache = parseCsvText(text);
+        refreshUrlColumnMapping(parsedCsvCache.header);
+        // When CSV is uploaded, force merged output so downloads include original columns + scraped columns.
+        mergeOutputEl.value = 'merge';
+      } catch {
+        parsedCsvCache = null;
+        refreshUrlColumnMapping([]);
+      }
+    });
+
     runBtn.addEventListener('click', async () => {
       const bundle = await getInputBundle();
       if (!bundle.urls.length) {
@@ -430,7 +476,7 @@
           originalHeader: bundle.originalHeader,
           originalRows: bundle.originalRows,
           detectedUrlColumn: bundle.detectedUrlColumn,
-          outputMode: document.getElementById('mergeOutput').value,
+          outputMode: bundle.originalRows.length ? 'merge' : mergeOutputEl.value,
           contactFirst: document.getElementById('contactFirst').value === 'true',
           skipSocial: document.getElementById('skipSocial').value === 'true',
           maxPagesPerSite: Number(document.getElementById('maxPages').value || 5),
