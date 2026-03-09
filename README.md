@@ -58,6 +58,15 @@ You can use any of these:
 - Functions directory: `netlify/functions`
 - Add Webshare env vars in Site settings
 
+## Deploy to Vercel
+- Push to GitHub
+- Import into Vercel
+- Framework preset: `Other`
+- Root directory: project root
+- Build command: `node build-noop.js`
+- Output directory: leave empty (routing handled by `vercel.json`)
+- Add Webshare env vars in Project Settings
+
 ## Notes
 - Country/session settings are implemented as labels carried through the app and request session IDs. Exact country pinning depends on the proxy endpoint format your Webshare plan supports.
 - For large jobs, move this logic to a worker environment.
