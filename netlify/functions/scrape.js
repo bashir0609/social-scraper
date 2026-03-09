@@ -11,6 +11,9 @@ if (process.platform === 'win32') {
 // Force Crawlee storage to a writable temp directory.
 if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
   process.env.CRAWLEE_STORAGE_DIR = process.env.CRAWLEE_STORAGE_DIR || '/tmp/crawlee_storage';
+  // Vercel runtime does not provide `ps`, which Crawlee uses for memory snapshots
+  // unless it detects a Lambda-like environment.
+  process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE = process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || '1024';
 }
 
 const SOCIAL_PATTERNS = {
