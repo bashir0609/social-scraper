@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Social Scraper v5 (Webshare Targeting)</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+    :root {
+      --bg: #f5f7fb;
+      --bg-accent: radial-gradient(1200px 500px at 10% -10%, #dff4ee 0%, transparent 60%), radial-gradient(900px 420px at 100% -20%, #ffe9d2 0%, transparent 58%);
+      --surface: rgba(255, 255, 255, 0.88);
+      --surface-strong: #ffffff;
+      --text: #1f2a37;
+      --muted: #5f6f84;
+      --border: #d9e1ec;
+      --primary: #0f766e;
+      --primary-strong: #0b5f59;
+      --danger: #b42318;
+      --ok: #10734a;
+      --shadow: 0 14px 30px rgba(20, 48, 76, 0.09);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Manrope', 'Segoe UI', sans-serif;
+      max-width: 1180px;
+      margin: 24px auto;
+      padding: 0 16px 28px;
+      line-height: 1.5;
+      color: var(--text);
+      background-color: var(--bg);
+      background-image: var(--bg-accent);
+      background-attachment: fixed;
+    }
+
+    h1, h2 {
+      letter-spacing: -0.02em;
+      margin: 0 0 10px;
+    }
+
+    h1 { font-size: clamp(1.55rem, 2vw + 1rem, 2.3rem); }
+    h2 { font-size: 1.2rem; }
+
+    textarea, input, button, select { font: inherit; }
+
+    textarea,
+    input,
+    select {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: var(--surface-strong);
+      color: var(--text);
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    textarea:focus,
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: #88cbc3;
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+    }
+
+    textarea { width: 100%; min-height: 170px; resize: vertical; }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 14px 0;
+      align-items: end;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-top: 16px;
+      background: var(--surface);
+      backdrop-filter: blur(5px);
+      box-shadow: var(--shadow);
+    }
+
+    button {
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary), #0891b2);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 120ms ease, opacity 120ms ease, box-shadow 160ms ease;
+      box-shadow: 0 8px 20px rgba(15, 118, 110, 0.24);
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); opacity: 0.95; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+
+    #clearHistoryBtn {
+      background: #e7edf5;
+      color: var(--text);
+      box-shadow: none;
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin-top: 16px;
+      font-size: 13px;
+      background: var(--surface-strong);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      padding: 9px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    th:last-child, td:last-child { border-right: none; }
+    th { background: #f0f5fa; font-weight: 700; }
+
+    .muted { color: var(--muted); }
+    .error { color: var(--danger); font-weight: 600; }
+    .ok { color: var(--ok); font-weight: 600; }
+    .small { font-size: 12px; }
+    input[type="number"] { width: 110px; }
+
+    .history-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      margin: 10px 0;
+      background: var(--surface-strong);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #9bc9c3;
+      background: #e9f7f4;
+      color: #145e57;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    #status { margin-top: 4px; }
+    #results { overflow-x: auto; }
+
+    @media (max-width: 768px) {
+      body { margin: 12px auto; padding: 0 12px 20px; }
+      .card { padding: 14px; border-radius: 12px; }
+      .row { gap: 10px; }
+      .row > * { flex: 1 1 100%; min-width: 0; }
+      input[type="number"] { width: 100%; }
+      button { width: 100%; }
+      table { font-size: 12px; }
+      th, td { padding: 7px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Social Scraper v5 (Webshare Targeting)</h1>
+  <p class="muted">Upload a lead CSV or paste URLs. v5 can preserve your original lead rows and append crawl results for outreach-ready exports.</p>
+
+  <div class="card">
+    <label for="urls"><strong>Website URLs</strong></label>
+    <textarea id="urls" placeholder="https://example.com&#10;https://another-site.com"></textarea>
+
+    <div class="row">
+      <div>
+        <label for="csvFile"><strong>Or upload lead CSV</strong></label><br>
+        <input id="csvFile" type="file" accept=".csv,text/csv" />
+        <div class="small muted">Auto-detects domain/website/url/site/homepage columns.</div>
+      </div>
+      <div>
+        <label for="mergeOutput"><strong>Output mode</strong></label><br>
+        <select id="mergeOutput">
+          <option value="merge" selected>Merge results into original CSV rows</option>
+          <option value="flat">Flat scraper output only</option>
+        </select>
+      </div>
+      <div>
+        <label for="contactFirst"><strong>Crawl mode</strong></label><br>
+        <select id="contactFirst">
+          <option value="true" selected>Contact-first</option>
+          <option value="false">General crawl</option>
+        </select>
+      </div>
+      <div>
+        <label for="skipSocial"><strong>Social extraction</strong></label><br>
+        <select id="skipSocial">
+          <option value="false" selected>Enabled</option>
+          <option value="true">Skip social extraction</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Max pages/site<br><input id="maxPages" type="number" min="1" max="25" value="5" /></label>
+      <label>Max depth<br><input id="maxDepth" type="number" min="0" max="3" value="1" /></label>
+      <label>Concurrency<br><input id="concurrency" type="number" min="1" max="10" value="3" /></label>
+      <label>Retries<br><input id="maxRetries" type="number" min="0" max="5" value="1" /></label>
+      <label>Timeout ms<br><input id="timeoutMs" type="number" min="2000" max="30000" value="10000" /></label>
+      <label><input id="respectRobots" type="checkbox" checked /> Respect robots.txt</label>
+    </div>
+
+    <div class="row">
+      <label>Proxy country label<br><input id="proxyCountry" type="text" placeholder="e.g. US" /></label>
+      <label>Proxy session id<br><input id="proxySession" type="text" placeholder="e.g. batch1" /></label>
+      <span class="pill">Webshare via env vars</span>
+    </div>
+
+    <div class="row">
+      <button id="runBtn">Run scraper</button>
+      <button id="downloadBtn" disabled>Download CSV</button>
+      <button id="clearHistoryBtn" type="button">Clear history</button>
+    </div>
+
+    <div id="status" class="muted"></div>
+    <div id="results"></div>
+  </div>
+
+  <div class="card">
+    <h2>Saved runs</h2>
+    <div id="history"></div>
+  </div>
+
+  <script>
+    const runBtn = document.getElementById('runBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+    const statusEl = document.getElementById('status');
+    const resultsEl = document.getElementById('results');
+    const historyEl = document.getElementById('history');
+    const csvFileEl = document.getElementById('csvFile');
+    let latestRows = [];
+    let latestHeader = [];
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    function parseCsvLine(line) {
+      const result = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        const next = line[i + 1];
+        if (ch === '"' && inQuotes && next === '"') {
+          cur += '"';
+          i++;
+        } else if (ch === '"') {
+          inQuotes = !inQuotes;
+        } else if (ch === ',' && !inQuotes) {
+          result.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      result.push(cur);
+      return result;
+    }
+
+    function parseCsvText(text) {
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (!lines.length) return { header: [], rows: [] };
+      const header = parseCsvLine(lines[0]).map(v => v.trim());
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const vals = parseCsvLine(lines[i]);
+        const row = {};
+        header.forEach((h, idx) => row[h] = (vals[idx] || '').trim());
+        rows.push(row);
+      }
+      return { header, rows };
+    }
+
+    function detectUrlColumn(header) {
+      const lower = header.map(v => v.toLowerCase());
+      const preferred = ['domain', 'website', 'url', 'site', 'homepage'];
+      for (const col of preferred) {
+        const idx = lower.indexOf(col);
+        if (idx !== -1) return header[idx];
+      }
+      return header[0] || '';
+    }
+
+    async function getInputBundle() {
+      const pasted = document.getElementById('urls').value
+        .split('\n')
+        .map(v => v.trim())
+        .filter(Boolean);
+
+      const file = csvFileEl.files && csvFileEl.files[0];
+      if (!file) return { urls: pasted, originalHeader: [], originalRows: [] };
+
+      const text = await file.text();
+      const parsed = parseCsvText(text);
+      const urlCol = detectUrlColumn(parsed.header);
+      const urls = parsed.rows.map(r => r[urlCol]).filter(Boolean);
+      return { urls: [...new Set([...pasted, ...urls])], originalHeader: parsed.header, originalRows: parsed.rows, detectedUrlColumn: urlCol };
+    }
+
+    function buildCsv(rows, header) {
+      const out = [header.join(',')];
+      for (const row of rows) {
+        out.push(header.map(col => '"' + String(row[col] ?? '').replaceAll('"', '""') + '"').join(','));
+      }
+      return out.join('\n');
+    }
+
+    function render(rows) {
+      if (!rows.length) {
+        resultsEl.innerHTML = '<p class="error">No results.</p>';
+        return;
+      }
+      const cols = [
+        'scrape_input_url',
+        'redirected_homepage_url',
+        'homepage_status_code',
+        'scrape_domain',
+        'contact_page',
+        'linkedin_urls',
+        'instagram_urls',
+        'twitter_urls',
+        'emails_found',
+        'phones_found',
+        'ads_txt_status',
+        'app_ads_txt_status',
+        'scrape_status'
+      ];
+      const headers = [
+        'Input URL',
+        'Redirected Homepage URL',
+        'Homepage Status Code',
+        'Domain',
+        'Contact Page',
+        'LinkedIn',
+        'Instagram',
+        'X/Twitter',
+        'Emails',
+        'Phones',
+        'ads.txt',
+        'app-ads.txt',
+        'Status'
+      ];
+      const table = ['<table><thead><tr>', ...headers.map(h => `<th>${escapeHtml(h)}</th>`), '</tr></thead><tbody>'];
+      for (const row of rows.slice(0, 100)) {
+        table.push('<tr>');
+        for (const col of cols) table.push(`<td>${escapeHtml(row[col] ?? '')}</td>`);
+        table.push('</tr>');
+      }
+      table.push('</tbody></table>');
+      resultsEl.innerHTML = table.join('');
+    }
+
+    function loadHistory() {
+      const items = JSON.parse(localStorage.getItem('social-scraper-history-v5') || '[]');
+      if (!items.length) {
+        historyEl.innerHTML = '<div class="muted">No saved runs yet.</div>';
+        return;
+      }
+      historyEl.innerHTML = items.map((item, idx) => `
+        <div class="history-item">
+          <div><strong>Run ${items.length - idx}</strong> — ${escapeHtml(item.createdAt)}</div>
+          <div class="small muted">${item.count} row(s)</div>
+          <button data-idx="${idx}" class="load-run">Load</button>
+        </div>
+      `).join('');
+      historyEl.querySelectorAll('.load-run').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const item = items[Number(btn.dataset.idx)];
+          latestRows = item.rows || [];
+          latestHeader = item.header || [];
+          render(latestRows);
+          downloadBtn.disabled = latestRows.length === 0;
+          statusEl.textContent = `Loaded saved run from ${item.createdAt}`;
+        });
+      });
+    }
+
+    function saveHistory(rows, header) {
+      const items = JSON.parse(localStorage.getItem('social-scraper-history-v5') || '[]');
+      items.unshift({ createdAt: new Date().toLocaleString(), count: rows.length, rows, header });
+      localStorage.setItem('social-scraper-history-v5', JSON.stringify(items.slice(0, 10)));
+      loadHistory();
+    }
+
+    clearHistoryBtn.addEventListener('click', () => {
+      localStorage.removeItem('social-scraper-history-v5');
+      loadHistory();
+    });
+
+    runBtn.addEventListener('click', async () => {
+      const bundle = await getInputBundle();
+      if (!bundle.urls.length) {
+        statusEl.innerHTML = '<span class="error">Add at least one URL or upload a CSV.</span>';
+        return;
+      }
+
+      runBtn.disabled = true;
+      downloadBtn.disabled = true;
+      resultsEl.innerHTML = '';
+      statusEl.textContent = 'Running scraper...';
+
+      try {
+        const payload = {
+          urls: bundle.urls,
+          originalHeader: bundle.originalHeader,
+          originalRows: bundle.originalRows,
+          detectedUrlColumn: bundle.detectedUrlColumn,
+          outputMode: document.getElementById('mergeOutput').value,
+          contactFirst: document.getElementById('contactFirst').value === 'true',
+          skipSocial: document.getElementById('skipSocial').value === 'true',
+          maxPagesPerSite: Number(document.getElementById('maxPages').value || 5),
+          maxDepth: Number(document.getElementById('maxDepth').value || 1),
+          concurrency: Number(document.getElementById('concurrency').value || 3),
+          maxRetries: Number(document.getElementById('maxRetries').value || 1),
+          timeoutMs: Number(document.getElementById('timeoutMs').value || 10000),
+          respectRobots: document.getElementById('respectRobots').checked,
+          proxyCountry: document.getElementById('proxyCountry').value.trim(),
+          proxySession: document.getElementById('proxySession').value.trim()
+        };
+
+        const res = await fetch('/api/scrape', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+
+        latestRows = data.rows || [];
+        latestHeader = data.header || Object.keys(latestRows[0] || {});
+        render(latestRows);
+        saveHistory(latestRows, latestHeader);
+        statusEl.innerHTML = `<span class="ok">Done.</span> Produced ${latestRows.length} row(s).`;
+        downloadBtn.disabled = latestRows.length === 0;
+      } catch (err) {
+        statusEl.innerHTML = `<span class="error">${escapeHtml(err.message)}</span>`;
+      } finally {
+        runBtn.disabled = false;
+      }
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const csv = buildCsv(latestRows, latestHeader);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'social-scraper-results-v5-webshare.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    loadHistory();
+  </script>
+</body>
+</html>
