@@ -391,16 +391,22 @@ async function crawlSingleSite(inputUrl, options) {
       });
 
       if (depth < maxDepth) {
-        for (const link of nextLinks) {
-          const shouldPrioritize = contactFirst && link.isContact;
-          await enqueueLinks({
-            urls: [link.url],
-            transformRequestFunction: (req) => {
-              req.userData = { depth: depth + 1, priority: shouldPrioritize ? 2 : 1 };
-              return req;
-            },
-          });
-        }
+        const remainingBudget = Math.max(0, maxPagesPerSite - found.pages_visited);
+        if (!remainingBudget) return;
+
+        const prioritized = nextLinks.filter((l) => contactFirst && l.isContact);
+        const normal = nextLinks.filter((l) => !(contactFirst && l.isContact));
+        const selected = [...prioritized, ...normal].slice(0, remainingBudget);
+        if (!selected.length) return;
+
+        await enqueueLinks({
+          urls: selected.map((l) => l.url),
+          transformRequestFunction: (req) => {
+            const isContact = selected.some((l) => l.url === req.url && l.isContact);
+            req.userData = { depth: depth + 1, priority: isContact ? 2 : 1 };
+            return req;
+          },
+        });
       }
     },
     failedRequestHandler({ request }) {
