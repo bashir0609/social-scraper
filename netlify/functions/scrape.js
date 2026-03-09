@@ -7,6 +7,12 @@ if (process.platform === 'win32') {
   process.env.CRAWLEE_SYSTEM_INFO_V2 = '0';
 }
 
+// Serverless filesystems (e.g. Vercel) cannot write inside the deployment bundle.
+// Force Crawlee storage to a writable temp directory.
+if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  process.env.CRAWLEE_STORAGE_DIR = process.env.CRAWLEE_STORAGE_DIR || '/tmp/crawlee_storage';
+}
+
 const SOCIAL_PATTERNS = {
   linkedin: /linkedin\.com\/(company|in|school)\//i,
   facebook: /facebook\.com\//i,
