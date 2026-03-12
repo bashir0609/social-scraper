@@ -1,9 +1,9 @@
 # API Specification: /api/scrape
 
-The scraper core is exposed via a Netlify Function.
+The scraper core is exposed via a Vercel API route.
 
 ## Endpoint
-`POST /api/scrape` (Redirected from `/.netlify/functions/scrape` via `netlify.toml`)
+`POST /api/scrape`
 
 ## Request Body (JSON)
 | Field | Type | Description | Default |
@@ -17,11 +17,10 @@ The scraper core is exposed via a Netlify Function.
 | `maxDepth` | `number` | Crawling depth from root (0-3) | `1` |
 | `concurrency` | `number` | Concurrent site scraping jobs (1-10) | `3` |
 | `timeoutMs` | `number` | Request timeout per page | `10000` |
-| `proxyCountry` | `string` | Country label for proxy rotation | `''` |
-| `proxySession` | `string` | Session ID for sticky proxy sessions | `''` |
 
 ## Response Body (JSON)
 - `rows`: The resulting data rows (merged or flat).
 - `header`: The resulting CSV header.
 - `proxyEnabled`: Boolean indicating if proxies were used.
 - `proxyCount`: Number of configured proxy URLs.
+- Proxy rotation is automatic when backend Webshare environment variables are configured.

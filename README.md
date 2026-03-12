@@ -1,11 +1,11 @@
-# Netlify Crawllee Social Scraper v5 (Webshare Targeting)
+# Vercel Social Scraper v5 (Automatic Proxy Rotation)
 
-This version is optimized for lead-sheet enrichment and Webshare-based crawling.
+This version is optimized for lead-sheet enrichment and Webshare-based crawling with automatic backend proxy rotation.
 
 ## New in v5
 - Lead sheet CSV mapping
 - Output preserves original lead columns
-- Country/session proxy controls in the UI
+- Automatic proxy rotation from backend env vars
 - Contact-first crawl mode
 - Optional skip-social mode
 - Better contact page detection and prioritization
@@ -49,14 +49,7 @@ You can use any of these:
 - `WEBSHARE_PROXY_PORT`
 - `WEBSHARE_PROXY_USERNAME`
 - `WEBSHARE_PROXY_PASSWORD`
-
-## Deploy to Netlify
-- Push to GitHub
-- Import into Netlify
-- Build command: `node build-noop.js`
-- Publish directory: `public`
-- Functions directory: `netlify/functions`
-- Add Webshare env vars in Site settings
+- `WEBSHARE_API_KEY`
 
 ## Deploy to Vercel
 - Push to GitHub
@@ -67,6 +60,17 @@ You can use any of these:
 - Output directory: leave empty (routing handled by `vercel.json`)
 - Add Webshare env vars in Project Settings
 
+## Local Development (Docker)
+You can easily run this project locally using Docker Compose without needing Node.js installed on your host machine.
+
+1. Ensure Docker and Docker Compose are installed and running.
+2. Run the following command in the project root:
+   ```bash
+   docker-compose up --build
+   ```
+3. The server will start and be available at `http://localhost:8888`.
+4. Any changes you make to the local files (except `package.json`/`node_modules`) will be instantly reflected.
+
 ## Notes
-- Country/session settings are implemented as labels carried through the app and request session IDs. Exact country pinning depends on the proxy endpoint format your Webshare plan supports.
+- Proxy selection happens on the server automatically. The frontend does not need proxy configuration.
 - For large jobs, move this logic to a worker environment.

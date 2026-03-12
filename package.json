@@ -1,20 +1,18 @@
 {
-  "name": "netlify-crawllee-social-scraper-v5-webshare-targeting",
-  "version": "5.0.0",
+  "name": "social-scraper",
+  "version": "1.0.0",
   "private": true,
+  "packageManager": "npm@10.9.2",
   "type": "module",
-  "description": "Netlify-deployable Crawllee app with Webshare proxy support, lead-sheet mapping, country/session controls, and contact-first crawling.",
+  "description": "Social Scraper",
   "scripts": {
-    "dev": "npx vercel dev --listen 8888",
-    "dev:netlify": "netlify dev",
+    "dev": "node scripts/local-dev.mjs",
+    "dev:vercel": "node scripts/dev-vercel.mjs",
     "build": "node build-noop.js",
-    "start": "npx vercel dev --listen 8888"
+    "start": "node scripts/local-dev.mjs"
   },
   "dependencies": {
     "crawlee": "^3.16.0",
     "got-scraping": "^4.2.1"
-  },
-  "devDependencies": {
-    "netlify-cli": "^24.0.1"
   }
 }

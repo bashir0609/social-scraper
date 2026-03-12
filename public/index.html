@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Social Scraper v5 (Webshare Targeting)</title>
+  <title>Social Scraper v5 (Automatic Proxy Rotation)</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
@@ -195,7 +195,7 @@
   </style>
 </head>
 <body>
-  <h1>Social Scraper v5 (Webshare Targeting)</h1>
+  <h1>Social Scraper v5 (Automatic Proxy Rotation)</h1>
   <p class="muted">Upload a lead CSV or paste URLs. v5 can preserve your original lead rows and append crawl results for outreach-ready exports.</p>
 
   <div class="card">
@@ -241,17 +241,17 @@
       <label>Concurrency<br><input id="concurrency" type="number" min="1" max="10" value="3" /></label>
       <label>Retries<br><input id="maxRetries" type="number" min="0" max="5" value="1" /></label>
       <label>Timeout ms<br><input id="timeoutMs" type="number" min="2000" max="30000" value="10000" /></label>
+      <label><input id="useProxy" type="checkbox" /> Use proxy rotation</label>
       <label><input id="respectRobots" type="checkbox" checked /> Respect robots.txt</label>
     </div>
 
     <div class="row">
-      <label>Proxy country label<br><input id="proxyCountry" type="text" placeholder="e.g. US" /></label>
-      <label>Proxy session id<br><input id="proxySession" type="text" placeholder="e.g. batch1" /></label>
-      <span class="pill">Webshare via env vars</span>
+      <span class="pill">Proxy rotation is automatic via server env vars</span>
     </div>
 
     <div class="row">
       <button id="runBtn">Run scraper</button>
+      <button id="stopBtn" type="button" disabled>Stop</button>
       <button id="downloadBtn" disabled>Download CSV</button>
       <button id="clearHistoryBtn" type="button">Clear history</button>
     </div>
@@ -267,6 +267,7 @@
 
   <script>
     const runBtn = document.getElementById('runBtn');
+    const stopBtn = document.getElementById('stopBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
     const statusEl = document.getElementById('status');
@@ -288,6 +289,9 @@
     let parsedCsvCache = null;
     let currentPage = 1;
     let pageSize = 50;
+    let activeAbortController = null;
+    let stopRequested = false;
+    let partialFlatRows = [];
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -393,19 +397,28 @@
       }
     }
 
+    function isLocalDev() {
+      const host = window.location.hostname;
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    }
+
     async function runScrapeInBatches(allUrls, commonPayload, batchSize = 5) {
       const flatRows = [];
+      partialFlatRows = [];
       const total = allUrls.length;
 
       for (let start = 0; start < total; start += batchSize) {
+        if (stopRequested) throw new Error('Scrape stopped.');
         const end = Math.min(start + batchSize, total);
         const batch = allUrls.slice(start, end);
         const percent = Math.round((start / total) * 100);
         statusEl.innerHTML = `<span class="muted">Running...</span> ${start}/${total} (${percent}%)`;
 
+        activeAbortController = new AbortController();
         const res = await fetch('/api/scrape', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
+          signal: activeAbortController.signal,
           body: JSON.stringify({
             ...commonPayload,
             urls: batch,
@@ -415,10 +428,12 @@
             detectedUrlColumn: '',
           })
         });
+        activeAbortController = null;
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `Request failed at batch ${start + 1}`);
 
         flatRows.push(...(data.rows || []));
+        partialFlatRows = [...flatRows];
         render(flatRows);
       }
 
@@ -458,6 +473,7 @@
         'scrape_domain',
         'contact_page',
         'linkedin_urls',
+        'facebook_urls',
         'instagram_urls',
         'twitter_urls',
         'emails_found',
@@ -473,6 +489,7 @@
         'Domain',
         'Contact Page',
         'LinkedIn',
+        'Facebook',
         'Instagram',
         'X/Twitter',
         'Emails',
@@ -573,6 +590,16 @@
       loadHistory();
     });
 
+    stopBtn.addEventListener('click', () => {
+      stopRequested = true;
+      if (activeAbortController) {
+        activeAbortController.abort();
+        activeAbortController = null;
+      }
+      stopBtn.disabled = true;
+      statusEl.innerHTML = '<span class="muted">Stopping...</span>';
+    });
+
     csvFileEl.addEventListener('change', async () => {
       parsedCsvCache = null;
       const file = csvFileEl.files && csvFileEl.files[0];
@@ -601,9 +628,12 @@
       }
 
       runBtn.disabled = true;
+      stopBtn.disabled = false;
       downloadBtn.disabled = true;
       resultsEl.innerHTML = '';
       statusEl.textContent = 'Running scraper...';
+      stopRequested = false;
+      partialFlatRows = [];
 
       try {
         const payload = {
@@ -614,12 +644,13 @@
           concurrency: Number(document.getElementById('concurrency').value || 3),
           maxRetries: Number(document.getElementById('maxRetries').value || 1),
           timeoutMs: Number(document.getElementById('timeoutMs').value || 10000),
-          respectRobots: document.getElementById('respectRobots').checked,
-          proxyCountry: document.getElementById('proxyCountry').value.trim(),
-          proxySession: document.getElementById('proxySession').value.trim()
+          useProxy: document.getElementById('useProxy').checked,
+          respectRobots: document.getElementById('respectRobots').checked
         };
 
-        const batchSize = Math.max(1, Math.min(payload.concurrency || 3, 10));
+        const batchSize = isLocalDev()
+          ? 1
+          : Math.max(1, Math.min(payload.concurrency || 3, 10));
         const flatRows = await runScrapeInBatches(bundle.urls, payload, batchSize);
 
         if (bundle.originalRows.length) {
@@ -642,9 +673,36 @@
         statusEl.innerHTML = `<span class="ok">Done.</span> Produced ${latestRows.length} row(s).`;
         downloadBtn.disabled = latestRows.length === 0;
       } catch (err) {
-        statusEl.innerHTML = `<span class="error">${escapeHtml(err.message)}</span>`;
+        const stopped = stopRequested || err.name === 'AbortError';
+        if (stopped && partialFlatRows.length) {
+          if (bundle.originalRows.length) {
+            const merged = mergeRowsWithScrapeResults(
+              bundle.originalRows,
+              bundle.originalHeader,
+              bundle.detectedUrlColumn,
+              partialFlatRows
+            );
+            latestRows = merged.rows;
+            latestHeader = merged.header;
+          } else {
+            latestRows = partialFlatRows;
+            latestHeader = Object.keys(latestRows[0] || {});
+          }
+
+          currentPage = 1;
+          render(latestRows);
+          downloadBtn.disabled = latestRows.length === 0;
+          statusEl.innerHTML = `<span class="muted">Stopped.</span> Partial results available: ${latestRows.length} row(s).`;
+        } else {
+          statusEl.innerHTML = stopped
+            ? '<span class="muted">Stopped.</span>'
+            : `<span class="error">${escapeHtml(err.message)}</span>`;
+        }
       } finally {
         runBtn.disabled = false;
+        stopBtn.disabled = true;
+        activeAbortController = null;
+        stopRequested = false;
       }
     });
 

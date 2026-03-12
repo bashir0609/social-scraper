@@ -1,0 +1,252 @@
+{
+  "name": "Social Scraper File Workflow",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "input-path",
+              "name": "inputPath",
+              "type": "string",
+              "value": "C:\\\\n8n-data\\\\input\\\\social-scraper-input.csv"
+            },
+            {
+              "id": "output-path",
+              "name": "outputPath",
+              "type": "string",
+              "value": "C:\\\\n8n-data\\\\output\\\\social-scraper-output.csv"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2",
+      "name": "Set Paths",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "={{ $json.inputPath }}"
+      },
+      "id": "3",
+      "name": "Read Input CSV",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        660,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "fromFile",
+        "binaryPropertyName": "data",
+        "fileFormat": "csv",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Parse CSV",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [
+        880,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = items.map((item) => item.json);\nconst header = rows.length ? Object.keys(rows[0]) : [];\nconst preferred = ['domain', 'website', 'url', 'site', 'homepage'];\nconst lower = header.map((value) => value.toLowerCase());\nlet detectedUrlColumn = header[0] || '';\nfor (const candidate of preferred) {\n  const index = lower.indexOf(candidate);\n  if (index !== -1) {\n    detectedUrlColumn = header[index];\n    break;\n  }\n}\nconst urls = rows.map((row) => row[detectedUrlColumn]).filter(Boolean);\nreturn [{\n  json: {\n    outputPath: $('Set Paths').first().json.outputPath,\n    urls,\n    originalHeader: header,\n    originalRows: rows,\n    detectedUrlColumn,\n    outputMode: 'merge',\n    contactFirst: true,\n    skipSocial: false,\n    maxPagesPerSite: 5,\n    maxDepth: 1,\n    concurrency: 3,\n    maxRetries: 1,\n    timeoutMs: 10000,\n    useProxy: true,\n    respectRobots: true\n  }\n}];"
+      },
+      "id": "5",
+      "name": "Build Scrape Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://social-scraper-web.vercel.app/api/scrape",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  urls: $json.urls,\n  originalHeader: $json.originalHeader,\n  originalRows: $json.originalRows,\n  detectedUrlColumn: $json.detectedUrlColumn,\n  outputMode: $json.outputMode,\n  contactFirst: $json.contactFirst,\n  skipSocial: $json.skipSocial,\n  maxPagesPerSite: $json.maxPagesPerSite,\n  maxDepth: $json.maxDepth,\n  concurrency: $json.concurrency,\n  maxRetries: $json.maxRetries,\n  timeoutMs: $json.timeoutMs,\n  useProxy: $json.useProxy,\n  respectRobots: $json.respectRobots\n} }}",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Scrape Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $json.rows || [];\nreturn rows.map((row) => ({ json: row }));"
+      },
+      "id": "7",
+      "name": "Split Output Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toFile",
+        "fileFormat": "csv",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "8",
+      "name": "Create Output CSV",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [
+        1830,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "={{ $('Build Scrape Payload').first().json.outputPath }}",
+        "dataPropertyName": "data"
+      },
+      "id": "9",
+      "name": "Write Output File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2060,
+        340
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Paths": {
+      "main": [
+        [
+          {
+            "node": "Read Input CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Input CSV": {
+      "main": [
+        [
+          {
+            "node": "Parse CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CSV": {
+      "main": [
+        [
+          {
+            "node": "Build Scrape Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Scrape Payload": {
+      "main": [
+        [
+          {
+            "node": "Scrape Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Request": {
+      "main": [
+        [
+          {
+            "node": "Split Output Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Output Rows": {
+      "main": [
+        [
+          {
+            "node": "Create Output CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Output CSV": {
+      "main": [
+        [
+          {
+            "node": "Write Output File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "pinData": {},
+  "versionId": "social-scraper-file-v1"
+}

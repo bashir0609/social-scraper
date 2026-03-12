@@ -9,10 +9,6 @@ The scraper checks these variables in order of priority:
 2.  `WEBSHARE_PROXY_URL`: A single full proxy URL.
 3.  `WEBSHARE_PROXY_HOST`, `WEBSHARE_PROXY_PORT`, `WEBSHARE_PROXY_USERNAME`, `WEBSHARE_PROXY_PASSWORD`: For a single credential-based proxy.
 
-## Proxy Decoration
-The scraper automatically decorates the proxy username based on UI inputs:
-- **Country**: Appends `-country-{label}` to the username.
-- **Session**: Appends `-session-{id}` to the username for sticky sessions.
-
-> [!NOTE]
-> Exact country pinning depends on your Webshare plan's endpoint support (e.g., `p.webshare.io`).
+## Rotation Behavior
+When multiple proxy URLs are available, the backend rotates them automatically across scrape jobs.
+No frontend proxy inputs are required.

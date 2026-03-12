@@ -1,21 +1,21 @@
-# Deployment Guide: Netlify
+# Deployment Guide: Vercel
 
 ## Prerequisites
-- Netlify CLI installed (optional, for local dev).
+- Vercel account or Vercel CLI for local dev.
 - A Webshare proxy account.
 
-## Netlify Setup
-1.  **Connect Repo**: Push the code to GitHub/GitLab and connect to Netlify.
+## Vercel Setup
+1.  **Connect Repo**: Push the code to GitHub/GitLab and import it into Vercel.
 2.  **Build Settings**:
     - Build Command: `node build-noop.js` (no compilation needed).
-    - Publish Directory: `public`.
-    - Functions Directory: `netlify/functions`.
-3.  **Environment Variables**: Add your `WEBSHARE_PROXY_*` variables in the Site Settings.
+    - Framework Preset: `Other`.
+    - Output Directory: leave empty.
+3.  **Environment Variables**: Add your `WEBSHARE_PROXY_*` variables in Project Settings.
 
 ## Local Development
-Run `netlify dev` to start the local emulator:
+Run Vercel dev to start the local server:
 ```bash
-npm install --ignore-scripts # Use ignore-scripts on Node v25+
-netlify dev
+npm install
+npx --yes vercel dev --listen 8888
 ```
 The scraper will be available at `http://localhost:8888`.

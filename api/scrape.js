@@ -1,4 +1,4 @@
-import { handler as netlifyStyleHandler } from '../netlify/functions/scrape.js';
+import { handler as scrapeHandler } from '../lib/scrape-core.js';
 
 export default async function handler(req, res) {
   const method = req.method || 'GET';
@@ -6,7 +6,7 @@ export default async function handler(req, res) {
     ? req.body
     : JSON.stringify(req.body ?? {});
 
-  const result = await netlifyStyleHandler({
+  const result = await scrapeHandler({
     httpMethod: method,
     body: bodyString,
   });
@@ -30,4 +30,3 @@ export default async function handler(req, res) {
 
   res.status(statusCode).send(payload);
 }
-

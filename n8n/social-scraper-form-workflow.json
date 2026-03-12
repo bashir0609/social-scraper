@@ -1,0 +1,232 @@
+{
+  "name": "Social Scraper Form Workflow",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "social-scraper-upload",
+        "formTitle": "Social Scraper Upload",
+        "formDescription": "Upload a CSV file with a website/domain column to run the scraper.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Lead CSV",
+              "fieldName": "leadCsv",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": ".csv"
+            },
+            {
+              "fieldLabel": "Use Proxy Rotation",
+              "fieldName": "useProxy",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  { "option": "true" },
+                  { "option": "false" }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Enflowpy Email",
+              "fieldName": "enflowEmail",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "your@email.com"
+            },
+            {
+              "fieldLabel": "Enflowpy Password",
+              "fieldName": "enflowPassword",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Your Enflowpy password"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1",
+      "name": "Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2,
+      "position": [240, 320]
+    },
+    {
+      "parameters": {
+        "operation": "fromFile",
+        "binaryPropertyName": "Lead_CSV",
+        "fileFormat": "csv",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Parse Uploaded CSV",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [500, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = items.map(item => item.json);\nconst header = rows.length ? Object.keys(rows[0]) : [];\nconst preferred = ['domain', 'website', 'url', 'site', 'homepage'];\nconst lower = header.map(v => v.toLowerCase());\nlet urlCol = header[0] || '';\nfor (const c of preferred) {\n  const i = lower.indexOf(c);\n  if (i !== -1) { urlCol = header[i]; break; }\n}\nconst formData = $('Form Trigger').first();\nconst binaryData = formData.binary && formData.binary.Lead_CSV;\nconst originalName = binaryData ? binaryData.fileName : 'output.csv';\nconst baseName = originalName.replace(/\\.csv$/i, '');\nconst outputPath = '/tmp/' + baseName + '-results.csv';\n\nreturn rows.map((row, idx) => {\n  let rawUrl = String(row[urlCol] || '').trim();\n  if (rawUrl && !/^https?:\\/\\//i.test(rawUrl)) rawUrl = 'https://' + rawUrl;\n  return {\n    json: {\n      _scrapeUrl: rawUrl,\n      _rowIndex: idx,\n      _urlColumn: urlCol,\n      _outputPath: outputPath,\n      _originalHeader: header,\n      _originalRow: row\n    }\n  };\n});"
+      },
+      "id": "3",
+      "name": "Prepare URL Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 320]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json._scrapeUrl }}",
+        "options": {
+          "timeout": 15000,
+          "allowUnauthorizedCerts": true,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 10
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text",
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "4",
+      "name": "Fetch Homepage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1020, 320],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prepItems = $('Prepare URL Items').all();\nconst SOC = {\n  linkedin: /linkedin\\.com\\/(company|in|school)\\//i,\n  facebook: /facebook\\.com\\//i,\n  instagram: /instagram\\.com\\//i,\n  twitter: /(twitter\\.com|x\\.com)\\//i,\n  tiktok: /tiktok\\.com\\//i,\n  youtube: /(youtube\\.com|youtu\\.be)\\//i,\n  pinterest: /pinterest\\./i\n};\nconst EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/g;\nconst HREF_RE = /href\\s*=\\s*[\"']([^\"']*?)[\"']/gi;\nconst CONTACT_RE = /contact|get-in-touch|support|impressum/i;\nconst BAD_DOMS = ['sentry.io','wixpress.com'];\nconst BAD_LOCAL = ['example','test','noreply','no-reply','yourname','username'];\n\nfunction ok(e) {\n  if (!e || !e.includes('@')) return false;\n  const p = e.split('@'); if (p.length !== 2) return false;\n  const [l, d] = p;\n  if (!l || !d || !d.includes('.')) return false;\n  if (l.length < 2 || l.length > 64) return false;\n  if (BAD_DOMS.some(b => d === b || d.endsWith('.'+b))) return false;\n  if (BAD_LOCAL.includes(l)) return false;\n  if (/^[a-f0-9]{24,}$/i.test(l)) return false;\n  return true;\n}\nfunction uniq(a) { return [...new Set((a||[]).filter(Boolean))]; }\n\nconst results = [];\nfor (let i = 0; i < items.length; i++) {\n  const orig = prepItems[i] ? prepItems[i].json : {};\n  const row = orig._originalRow || {};\n  const url = orig._scrapeUrl || '';\n  const resp = items[i].json || {};\n  let html = '';\n  let sc = 'error';\n\n  if (items[i].error || !url) {\n    results.push({ json: { ...row, scrape_input_url: url, scrape_status: url ? 'error' : 'no-url', homepage_status_code: 'error',\n      scrape_domain:'',contact_page:'',linkedin_urls:'',facebook_urls:'',instagram_urls:'',twitter_urls:'',\n      tiktok_urls:'',youtube_urls:'',pinterest_urls:'',emails_found:'',phones_found:'' }});\n    continue;\n  }\n\n  html = typeof resp === 'string' ? resp : (resp.body || resp.data || '');\n  sc = resp.statusCode || resp.status || 200;\n  if (typeof html !== 'string') html = '';\n\n  let domain = '';\n  try { domain = new URL(url).hostname.replace(/^www\\./, ''); } catch {}\n\n  const soc = {};\n  for (const k of Object.keys(SOC)) soc[k] = [];\n  const emails = [];\n  let contactPage = '';\n\n  let m;\n  const hre = new RegExp(HREF_RE.source, HREF_RE.flags);\n  while ((m = hre.exec(html)) !== null) {\n    const h = m[1];\n    for (const [k, re] of Object.entries(SOC)) {\n      if (re.test(h)) soc[k].push(h.split('?')[0]);\n    }\n    if (!contactPage && CONTACT_RE.test(h)) contactPage = h;\n    if (/^mailto:/i.test(h)) {\n      const e = decodeURIComponent(h.replace(/^mailto:/i,'').split('?')[0]).toLowerCase().trim();\n      if (ok(e)) emails.push(e);\n    }\n  }\n\n  const em2 = html.match(EMAIL_RE) || [];\n  for (const e of em2) { const c = e.toLowerCase(); if (ok(c)) emails.push(c); }\n\n  const phoneRe = /(?:\\+?\\d[\\d()\\s.-]{6,}\\d)/g;\n  const pm = html.match(phoneRe) || [];\n  const phones = uniq(pm.map(p => p.replace(/[^\\d+]/g, '')).filter(p => p.replace(/\\D/g,'').length >= 10 && p.replace(/\\D/g,'').length <= 15));\n\n  results.push({ json: {\n    ...row,\n    scrape_input_url: url,\n    scrape_domain: domain,\n    homepage_status_code: sc,\n    contact_page: contactPage,\n    linkedin_urls: uniq(soc.linkedin).join(' | '),\n    facebook_urls: uniq(soc.facebook).join(' | '),\n    instagram_urls: uniq(soc.instagram).join(' | '),\n    twitter_urls: uniq(soc.twitter).join(' | '),\n    tiktok_urls: uniq(soc.tiktok).join(' | '),\n    youtube_urls: uniq(soc.youtube).join(' | '),\n    pinterest_urls: uniq(soc.pinterest).join(' | '),\n    emails_found: uniq(emails).join(' | '),\n    phones_found: phones.join(' | '),\n    scrape_status: html ? 'ok' : 'no-content'\n  }});\n}\nreturn results;"
+      },
+      "id": "5",
+      "name": "Extract & Merge Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1280, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect all successfully scraped domains for Enflowpy enrichment\nconst allItems = items.map(item => item.json);\nconst domains = [...new Set(\n  allItems\n    .filter(r => r.scrape_domain && r.scrape_status === 'ok')\n    .map(r => r.scrape_domain)\n)];\n\nconst formData = $('Form Trigger').first();\nconst binaryData = formData.binary && formData.binary.Lead_CSV;\nconst filename = binaryData ? binaryData.fileName : 'n8n-upload.csv';\nconst email = formData.json.enflowEmail || '';\nconst password = formData.json.enflowPassword || '';\n\nreturn [{\n  json: {\n    domains,\n    filename,\n    email,\n    password,\n    totalDomains: domains.length,\n    scrapedRows: allItems\n  }\n}];"
+      },
+      "id": "7",
+      "name": "Collect Domains for Enflowpy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.0.152:8000/api/v1/auth/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { email: $json.email, password: $json.password } }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "10",
+      "name": "Login to Enflowpy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1800, 320],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.0.152:8000/api/v1/companies/enrich",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { domains: $('Collect Domains for Enflowpy').first().json.domains, filename: $('Collect Domains for Enflowpy').first().json.filename } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8",
+      "name": "Send to Enflowpy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2060, 320],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge Enflowpy job response with scraped data for final CSV output\nconst collectNode = $('Collect Domains for Enflowpy').first().json;\nconst enflowResponse = items[0].json || {};\nconst scrapedRows = collectNode.scrapedRows || [];\n\n// Add Enflowpy job info to each row\nconst enrichmentId = enflowResponse.enrichmentID || enflowResponse.enrichment_id || '';\nconst enrichmentStatus = enflowResponse.status || enflowResponse.detail || 'unknown';\n\nreturn scrapedRows.map(row => ({\n  json: {\n    ...row,\n    enflowpy_job_id: enrichmentId,\n    enflowpy_status: enrichmentStatus\n  }\n}));"
+      },
+      "id": "9",
+      "name": "Build Final Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2320, 320]
+    },
+    {
+      "parameters": {
+        "operation": "toFile",
+        "fileFormat": "csv",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Create Output CSV",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [2580, 320]
+    }
+  ],
+  "connections": {
+    "Form Trigger": {
+      "main": [[{ "node": "Parse Uploaded CSV", "type": "main", "index": 0 }]]
+    },
+    "Parse Uploaded CSV": {
+      "main": [[{ "node": "Prepare URL Items", "type": "main", "index": 0 }]]
+    },
+    "Prepare URL Items": {
+      "main": [[{ "node": "Fetch Homepage", "type": "main", "index": 0 }]]
+    },
+    "Fetch Homepage": {
+      "main": [[{ "node": "Extract & Merge Results", "type": "main", "index": 0 }]]
+    },
+    "Extract & Merge Results": {
+      "main": [[{ "node": "Collect Domains for Enflowpy", "type": "main", "index": 0 }]]
+    },
+    "Collect Domains for Enflowpy": {
+      "main": [[{ "node": "Login to Enflowpy", "type": "main", "index": 0 }]]
+    },
+    "Login to Enflowpy": {
+      "main": [[{ "node": "Send to Enflowpy", "type": "main", "index": 0 }]]
+    },
+    "Send to Enflowpy": {
+      "main": [[{ "node": "Build Final Output", "type": "main", "index": 0 }]]
+    },
+    "Build Final Output": {
+      "main": [[{ "node": "Create Output CSV", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "pinData": {},
+  "versionId": "social-scraper-form-v5"
+}
